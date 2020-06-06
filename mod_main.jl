@@ -5,12 +5,13 @@
 # QuadGK
 ####################################################################################################
 
-include("myFunctions.jl")
+include("mod_myFunctions.jl")
 
 ######################################## Tunable parameters ########################################
 tol_ellipseGuess = 0.01 / 100  # Tolerance for bisection method. In unit of shellThickness
 tol_barGuess = 0.01 / 100
 
+const Mo = 1.98847e30  # kg
 const kpc = 3.08567758128e19  # m
 
 const G = 6.67430e-11 / kpc ^ 3 * Mo  # m3 kg-1 s-2 to kpc3 Mo-1 s-2
@@ -71,6 +72,7 @@ function dmOnly()
     
     println(f, "tol_ellipseGuess=", tol_ellipseGuess)
     println(f, "tol_barGuess=", tol_barGuess)
+    println(f, "Mo=", Mo)
     println(f, "kpc=", kpc)
     println(f, "G=", G)
     println(f, "H=", H)
@@ -85,7 +87,6 @@ function dmOnly()
     println(f, "numOfSteps=", numOfSteps)
     println(f, "firstShellThickness=", firstShellThickness)
     println(f, "shellThicknessFactor=", shellThicknessFactor)
-    println(f, "initCoreT=", initCoreT)
     println(f, "R_vir=", R_vir)
     println(f, "R_s=", R_s)
     println(f, "rho_0=", rho_0)
@@ -234,7 +235,7 @@ function dmOnly()
 
     return nothing
 end
-#=
+
 function verify_NFW()
     # Verify my potential function
     Mshells_radii, Mshells_mass = NFW_shells(NFW_params, initNumOf_M_Shells, shellThicknessFactor)
@@ -262,8 +263,8 @@ function verify_NFW()
 
     return nothing
 end
-=#
+
 # Uncomment to pick which to run
-# dmOnly()
+ dmOnly()
 # verify_NFW()
 # withBar(totalBarMass)
