@@ -1,6 +1,6 @@
 # using Printf
 using QuadGK
-
+using DelimitedFiles
 
 ######################################### For dmOnly() #############################################
 # NFW_params = [rho_0, R_s, c] (see Wiki)
@@ -284,28 +284,27 @@ function newShellsRadii(shells_radii, shells_ellipseRadii)
     return newShells_radii
 end
 
+function weightFactorSolver(r_ref, r_max, r_min, L, totalE_afterDecay, Tshells_radii, Tshells_GPE, Tshells_enclosedMass)
+    integrand(r) = 1.0/sqrt(-energyEquation(r, L, totalE_afterDecay, Tshells_radii, Tshells_GPE, Tshells_enclosedMass))
 
-function weightFactorSolver(phi, a, e)
-    integrand(theta) = (a * (1 - e ^ 2) / (1 + e * cos(theta))) ^ 2 * theta
-
-    nominator = quadgk(integrand, 0, phi)
-    denominator =  quadgk(integrand, 0, pi)
+    nominator = quadgk(integrand, r_max, r_ref)
+    denominator =  quadgk(integrand, r_max, r_min)
     
     if (nominator[2] / nominator[1] > 0.01 / 100) | (denominator[2] / denominator[1] > 0.01 / 100)  # Accuracy check
         println("weightFactorSolver: absolute error from quadgk too large")
     end
-
-    return nominator[1] / denominator[1]
+    return (denominator[1]- nominator[1]) / denominator[1]
 end
 
 
 # Return a weightFactor array (weightFactor_r_ref(r_0)) given a r_ref
-function weightFactorArray(r_ref, shells_ellipseRadii)
+function weightFactorArray(r_ref, shells_ellipseRadii, shells_L, shells_totalE_afterDecay, Tshells_radii, Tshells_GPE, Tshells_enclosedMass)
     weightFactor = zeros(size(shells_ellipseRadii, 1))
     for i in 1:size(weightFactor, 1)  # Looping each r_0
-        r_max = shells_ellipseRadii[i, 2]
-        r_min = shells_ellipseRadii[i, 1]
-        
+        r_max = shells_ellipseRadii[i, 2] 
+        r_min = shells_ellipseRadii[i, 1] 
+        L = shells_L[i]
+        totalE_afterDecay = shells_totalE_afterDecay[i]
         if r_max == -1 && r_min == -1  # Escaped the whole system
             weightFactor[i] = 0
         elseif r_min > r_ref
@@ -313,29 +312,30 @@ function weightFactorArray(r_ref, shells_ellipseRadii)
         elseif r_max <= r_ref
             weightFactor[i] = 1
         else
-            a = (r_min + r_max) / 2
-            e = (r_max / r_min - 1) / (r_max / r_min + 1)
-
-            phi = acos((a * (1 - e ^ 2) / r_ref - 1) / e)
-            
-            weightFactor[i] = weightFactorSolver(phi, a ,e)
+            weightFactor[i] = weightFactorSolver(r_ref, r_max-5E-8, r_min+5E-8, L, totalE_afterDecay, Tshells_radii, Tshells_GPE, Tshells_enclosedMass)
         end
     end
-
     return weightFactor
 end
 
 
-function updateShellsMass(newShells_radii, shells_ellipseRadii, Mshells_mass, p_undecayed)
+function updateShellsMass(newShells_radii, shells_ellipseRadii, Mshells_mass, p_undecayed, shells_L, shells_totalE_afterDecay, Tshells_radii, Tshells_GPE, Tshells_enclosedMass) 
     Mshells_decayedMass = Mshells_mass * (1 - p_undecayed)  # To be redistributed
     Mshells_mass *= p_undecayed  # Remaining mass
     
     Dshells_enclosedMass_decayedMass = zeros(size(newShells_radii, 1))
     for i in 1:size(Dshells_enclosedMass_decayedMass, 1)
-        weightFactor = weightFactorArray(newShells_radii[i, 2], shells_ellipseRadii)
+        weightFactor = weightFactorArray(newShells_radii[i, 2], shells_ellipseRadii, shells_L, shells_totalE_afterDecay, Tshells_radii, Tshells_GPE, Tshells_enclosedMass)
+        #=
+        if mod(i,25)==0
+        	File = open("temp_mod$i.txt","w")
+        	writedlm(File, weightFactor)
+        	close(File)
+        end
+        =#
         Dshells_enclosedMass_decayedMass[i] = sum(Mshells_decayedMass .* weightFactor)
     end
-
+    #println("Dshells_enclosedMass_decayedMass size=", size(Dshells_enclosedMass_decayedMass, 1))
     Dshells_decayedMass = zeros(size(Dshells_enclosedMass_decayedMass, 1))
     if Dshells_decayedMass != []  # If all mothers at all radius escape upon decay
         Dshells_decayedMass[1] = Dshells_enclosedMass_decayedMass[1]
@@ -401,7 +401,7 @@ function adiabaticExpansion(shells_radii, shells_mass, Tshells_enclosedMass, Tsh
     if violationCount > 0
         println("adiabaticExpansion: violationCount = ", violationCount)
     end
-
+    
     expandedShells_radii = newShellsRadii(shells_radii, shells_expandedRadii)
     expandedShells_mass = zeros(size(expandedShells_radii, 1))
     for i in 1:size(expandedShells_radii, 1)  # This interpolation thing should work if the relation is monotonic. Check total mass after expansion.
@@ -496,7 +496,6 @@ function adiabaticExpansion(shells_radii, shells_mass, Tshells_enclosedMass, Tsh
     return expandedShells_radii, expandedShells_mass
 end
 
-
 function printToFile(shells_radii, shells_mass, fileName)
     f = open(fileName, "w")
 
@@ -513,7 +512,7 @@ function printToFile(shells_radii, shells_mass, fileName)
     for i in 1:size(shells_radii, 1)
         println(f, shells_radii[i, 1], "\t", shells_radii[i, 2], "\t", shells_radii[i, 3], "\t", shells_mass[i], "\t", shells_rho[i], "\t", shells_enclosedMass[i], "\t", shells_avgRho[i])
     end
-
+    close(f)
     return nothing
 end
 
@@ -524,24 +523,9 @@ function printToFile_GPE(Tshells_radii, Tshells_GPE, fileName)
     for i in 1:size(Tshells_radii, 1)
         println(f, Tshells_radii[i, 1], "\t", Tshells_radii[i, 2], "\t", Tshells_radii[i, 3], "\t", Tshells_GPE[i])
     end
-
+    close(f)
     return nothing
 end
-
-######################################### Not used yet #############################################
-function shellTrimmer(shells_radii, shells_mass)
-    numOfZeros = 0
-    for i in 0:size(shells_radii, 1) - 1
-        if shells_mass[end - i] == 0
-            numOfZeros += 1
-        else
-            break
-        end
-    end
- 
-    return shells_radii[1:end - numOfZeros, :], shells_mass[1:end - numOfZeros]
-end
-
 
 # Removing the "Boltzmann tail" of baryon particles (error: T should be r dependent)
 function barEscape(T, Tshells_GPE, Bshells_mass, m, k)

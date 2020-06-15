@@ -93,7 +93,7 @@ function dmOnly()
     println(f, "NFW_params=", NFW_params)
     println(f, "initNumOf_M_Shells=", initNumOf_M_Shells)
     println(f, "dt=", dt)
-
+    close(f)
     t = 0
     println("Initializing at t=$t Gyr...")
 
@@ -140,7 +140,7 @@ function dmOnly()
         # Compute the bigger array to contain the new radii
         Dshells_decayedRadii = newShellsRadii(Dshells_radii, Mshells_ellipseRadii)
         # Decay the mothers in the shells, distribute the new daughters
-        Mshells_mass, Dshells_decayedMass = updateShellsMass(Dshells_decayedRadii, Mshells_ellipseRadii, Mshells_mass, p_undecayed)
+        Mshells_mass, Dshells_decayedMass = updateShellsMass(Dshells_decayedRadii, Mshells_ellipseRadii, Mshells_mass, p_undecayed, Mshells_L, Mshells_totalE_afterDecay, Tshells_radii, Tshells_GPE, Tshells_enclosedMass)
         
         # # For checking how much of the daughters escaped
         # println(size(Mshells_ellipseRadii, 1))
