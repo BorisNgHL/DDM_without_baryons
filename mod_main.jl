@@ -3,6 +3,8 @@
 
 # Packages reqiured:
 # QuadGK
+# ForwardDiff
+# Dierckx
 ####################################################################################################
 
 include("mod_myFunctions.jl")

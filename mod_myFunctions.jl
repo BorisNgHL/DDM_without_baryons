@@ -1,6 +1,6 @@
-# using Printf
-using QuadGK
-using DelimitedFiles
+using QuadGK      
+using ForwardDiff
+using Dierckx
 
 ######################################### For dmOnly() #############################################
 # NFW_params = [rho_0, R_s, c] (see Wiki)
@@ -160,6 +160,7 @@ end
 
 function energyEquation(r, L, totalE_afterDecay, Tshells_radii, Tshells_GPE, Tshells_enclosedMass)    
     if r <= 0  # Rejected
+        println(r)
         return zeros(NaN)  # Error
     elseif r <= Tshells_radii[1, 3]  # r small
         return Tshells_GPE[1] + (L / r) ^ 2 / 2 - totalE_afterDecay
@@ -285,15 +286,35 @@ function newShellsRadii(shells_radii, shells_ellipseRadii)
 end
 
 function weightFactorSolver(r_ref, r_max, r_min, L, totalE_afterDecay, Tshells_radii, Tshells_GPE, Tshells_enclosedMass)
-    integrand(r) = 1.0/sqrt(-energyEquation(r, L, totalE_afterDecay, Tshells_radii, Tshells_GPE, Tshells_enclosedMass))
+    Eq(r) = energyEquation(r, L, totalE_afterDecay, Tshells_radii, Tshells_GPE, Tshells_enclosedMass)
+    GPE_prime(r_x) =ForwardDiff.derivative(Eq, r_x) 
+    GPE_prime_min = GPE_prime(r_min)
+    GPE_prime_max = GPE_prime(r_max)
+    g(r) = 1.0/sqrt(GPE_prime_min*(r_min-r)) + 1.0/sqrt(GPE_prime_max*(r_max-r))
+    f(r) = 1.0/sqrt(-energyEquation(r, L, totalE_afterDecay, Tshells_radii, Tshells_GPE, Tshells_enclosedMass))-g(r)
 
-    nominator = quadgk(integrand, r_max, r_ref)
-    denominator =  quadgk(integrand, r_max, r_min)
+    r_arr = collect(r_min+1E-6:(r_max-r_min)/1000:r_max)
+    #=
+    file = open("f.txt", "w")
+    [println(file, f(i), "\t", i) for i in r_arr]
+    close(file)
+    file = open("uncorr.txt", "w")
+    [println(file, 1.0/sqrt(-energyEquation(i, L, totalE_afterDecay, Tshells_radii, Tshells_GPE, Tshells_enclosedMass)), "\t", i) for i in r_arr]
+    =#
+    f_arr = [f(i) for i in r_arr]
+    #=
+    println()
+    println(r_arr[2],"      ",size(r_arr,1))
+    println(f_arr)
+    =#
+    spl = Spline1D(r_arr, f_arr)
+    #println(spl(1.2))
+    nominator = Dierckx.integrate(spl, r_min, r_ref) +2*sqrt((r_min-r_ref)/GPE_prime_min) +2*(sqrt(r_max-r_min)-sqrt(r_max-r_ref))/sqrt(GPE_prime_max)
+    denominator = Dierckx.integrate(spl, r_min, r_max) +2*sqrt((r_min-r_max)/GPE_prime_min) +2*(sqrt(r_max-r_min))/sqrt(GPE_prime_max)
+    #println(nominator/denominator, nominator>0, denominator>0)
+    #println(denominator)
     
-    if (nominator[2] / nominator[1] > 0.01 / 100) | (denominator[2] / denominator[1] > 0.01 / 100)  # Accuracy check
-        println("weightFactorSolver: absolute error from quadgk too large")
-    end
-    return (denominator[1]- nominator[1]) / denominator[1]
+    return nominator / denominator
 end
 
 
@@ -312,7 +333,7 @@ function weightFactorArray(r_ref, shells_ellipseRadii, shells_L, shells_totalE_a
         elseif r_max <= r_ref
             weightFactor[i] = 1
         else
-            weightFactor[i] = weightFactorSolver(r_ref, r_max-5E-8, r_min+5E-8, L, totalE_afterDecay, Tshells_radii, Tshells_GPE, Tshells_enclosedMass)
+            weightFactor[i] = weightFactorSolver(r_ref, r_max, r_min, L, totalE_afterDecay, Tshells_radii, Tshells_GPE, Tshells_enclosedMass)
         end
     end
     return weightFactor
@@ -328,9 +349,9 @@ function updateShellsMass(newShells_radii, shells_ellipseRadii, Mshells_mass, p_
         weightFactor = weightFactorArray(newShells_radii[i, 2], shells_ellipseRadii, shells_L, shells_totalE_afterDecay, Tshells_radii, Tshells_GPE, Tshells_enclosedMass)
         #=
         if mod(i,25)==0
-        	File = open("temp_mod$i.txt","w")
-        	writedlm(File, weightFactor)
-        	close(File)
+            File = open("temp_mod$i.txt","w")
+            writedlm(File, weightFactor)
+            close(File)
         end
         =#
         Dshells_enclosedMass_decayedMass[i] = sum(Mshells_decayedMass .* weightFactor)
